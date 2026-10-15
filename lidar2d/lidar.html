@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disaster Robot Zone Map</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #181f27; --line: #28323d;
+    --text: #e6edf3; --muted: #8b98a5;
+    --ok: #3fb950; --caution: #d29922; --danger: #f85149; --none: #5b6773;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .stat { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .layout { display: grid; gap: 16px; grid-template-columns: 2fr 1fr; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  #wrap { width: 100%; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #0a0d11; position: relative; cursor: crosshair; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--muted); align-items: center; }
+  .controls label { display: flex; align-items: center; gap: 8px; }
+  button { background: #21262d; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #30363d; }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
+  .cards { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-bottom: 16px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #141b22; }
+  .card .name { font-size: 12px; color: var(--muted); }
+  .card .val { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .val small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 3px; }
+  .card .tag { font-size: 12px; margin-top: 2px; color: var(--ok); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Disaster Robot Zone Map</h1>
+  <div class="stat">
+    <span><span class="dot" id="dot"></span><span id="conn">Checking connection</span></span>
+    <span id="rpm"></span>
+    <span id="pts"></span>
+  </div>
+</header>
+
+<main>
+  <section class="layout">
+    <div class="panel">
+      <h2>Lidar Grid Map (Persistent Memory & Custom Zone)</h2>
+      <div id="wrap"><canvas id="cv"></canvas></div>
+      <div class="controls">
+        <label>Range
+          <select id="range">
+            <option value="2">2 m</option>
+            <option value="4" selected>4 m</option>
+            <option value="8">8 m</option>
+          </select>
+        </label>
+        <button id="btnClearMap" style="background:#da3633; color:#fff;">Clear Map</button>
+        <button id="btnClearZone">Clear Zone</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Selected Zone Average Sensors</h2>
+      <div class="cards">
+        <div class="card"><div class="name">Temperature</div><div class="val" id="zTemp">--</div><div class="tag" id="tTemp">Draw zone on map</div></div>
+        <div class="card"><div class="name">Humidity</div><div class="val" id="zHum">--</div><div class="tag" id="tHum">Draw zone on map</div></div>
+        <div class="card"><div class="name">MQ-2 Gas</div><div class="val" id="zMq2">--</div><div class="tag" id="tMq2">Draw zone on map</div></div>
+        <div class="card"><div class="name">MQ-135 Air</div><div class="val" id="zMq135">--</div><div class="tag" id="tMq135">Draw zone on map</div></div>
+      </div>
+      <div class="hint">
+        Drag a rectangle over the grid map to inspect environmental sensors within that specific zone. Walls persist once scanned.
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $("cv");
+const ctx = cv.getContext("2d");
+let ranges = new Array(360).fill(0);
+let rangeM = 4;
+let globalSensors = { t: null, h: null, mq2: null, mq135: null };
+
+let isDrawing = false;
+let startX = 0, startY = 0;
+let zoneRect = null; // {xMin, xMax, yMin, yMax} in meters
+
+$("range").addEventListener("change", e => { rangeM = +e.target.value; draw(); });
+$("btnClearMap").addEventListener("click", async () => {
+  await fetch("/api/clear_map", { method: "POST" });
+  ranges = new Array(360).fill(0);
+  zoneRect = null;
+  draw();
+  updateZoneStats();
+});
+$("btnClearZone").addEventListener("click", () => { zoneRect = null; draw(); updateZoneStats(); });
+
+function sizeCanvas() {
+  const r = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr);
+  cv.height = Math.round(r.height * dpr);
+}
+new ResizeObserver(() => { sizeCanvas(); draw(); }).observe($("wrap"));
+
+function toXY(angleDeg, distM, cx, cy, scale) {
+  const a = angleDeg * Math.PI / 180;
+  return [cx - Math.sin(a) * distM * scale, cy - Math.cos(a) * distM * scale];
+}
+
+cv.addEventListener("mousedown", e => {
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  isDrawing = true;
+  startX = (e.clientX - rect.left) * dpr;
+  startY = (e.clientY - rect.top) * dpr;
+});
+
+cv.addEventListener("mousemove", e => {
+  if (!isDrawing) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const curX = (e.clientX - rect.left) * dpr;
+  const curY = (e.clientY - rect.top) * dpr;
+  
+  const w = cv.width, h = cv.height;
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 14 * dpr) / rangeM;
+
+  const mX1 = (cy - startY) / scale;
+  const mY1 = (cx - startX) / scale;
+  const mX2 = (cy - curY) / scale;
+  const mY2 = (cx - curX) / scale;
+
+  zoneRect = {
+    xMin: Math.min(mX1, mX2), xMax: Math.max(mX1, mX2),
+    yMin: Math.min(mY1, mY2), yMax: Math.max(mY1, mY2)
+  };
+  draw();
+});
+
+window.addEventListener("mouseup", () => {
+  if (isDrawing) {
+    isDrawing = false;
+    updateZoneStats();
+  }
+});
+
+function draw() {
+  const w = cv.width, h = cv.height;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 14 * dpr) / rangeM;
+
+  // Draw Cartesian grid (squares)
+  const stepM = rangeM <= 2 ? 0.5 : 1;
+  ctx.lineWidth = 1 * dpr;
+  ctx.font = (10 * dpr) + "px system-ui, sans-serif";
+  
+  for (let m = stepM; m <= rangeM + 1e-6; m += stepM) {
+    const pxDist = m * scale;
+    ctx.strokeStyle = "#1f2a35";
+    
+    // Grid box around center
+    ctx.strokeRect(cx - pxDist, cy - pxDist, pxDist * 2, pxDist * 2);
+
+    // Labels on axes
+    ctx.fillStyle = "#5b6773";
+    ctx.fillText(m + "m", cx + 3 * dpr, cy - pxDist + 10 * dpr);
+  }
+
+  // Center axes lines
+  ctx.strokeStyle = "#28323d";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - rangeM * scale); ctx.lineTo(cx, cy + rangeM * scale);
+  ctx.moveTo(cx - rangeM * scale, cy); ctx.lineTo(cx + rangeM * scale, cy);
+  ctx.stroke();
+
+  // Draw persistent map points
+  for (let i = 0; i < 360; i++) {
+    const d = ranges[i];
+    if (!d) continue;
+    const m = d / 1000;
+    if (m > rangeM) continue;
+    const p = toXY(i, m, cx, cy, scale);
+    ctx.fillStyle = "#3fb950";
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 2.2 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw user selected zone rectangle
+  if (zoneRect) {
+    const pxMin = cx - zoneRect.yMax * scale;
+    const pxMax = cx - zoneRect.yMin * scale;
+    const pyMin = cy - zoneRect.xMax * scale;
+    const pyMax = cy - zoneRect.xMin * scale;
+
+    ctx.strokeStyle = "#58a6ff";
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeRect(pxMin, pyMin, pxMax - pxMin, pyMax - pyMin);
+    ctx.fillStyle = "rgba(88, 166, 255, 0.15)";
+    ctx.fillRect(pxMin, pyMin, pxMax - pxMin, pyMax - pyMin);
+  }
+
+  // Robot marker (center)
+  ctx.fillStyle = "#58a6ff";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 11 * dpr);
+  ctx.lineTo(cx - 7 * dpr, cy + 8 * dpr);
+  ctx.lineTo(cx + 7 * dpr, cy + 8 * dpr);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function updateZoneStats() {
+  if (!zoneRect) {
+    $("zTemp").innerHTML = globalSensors.t !== null ? globalSensors.t.toFixed(1) + "<small>&deg;C</small>" : "--";
+    $("zHum").innerHTML = globalSensors.h !== null ? globalSensors.h.toFixed(1) + "<small>%</small>" : "--";
+    $("zMq2").textContent = globalSensors.mq2 !== null ? globalSensors.mq2 : "--";
+    $("zMq135").textContent = globalSensors.mq135 !== null ? globalSensors.mq135 : "--";
+    $("tTemp").textContent = "Overall (No zone)";
+    $("tHum").textContent = "Overall (No zone)";
+    $("tMq2").textContent = "Overall (No zone)";
+    $("tMq135").textContent = "Overall (No zone)";
+    return;
+  }
+
+  let countInZone = 0;
+  for (let i = 0; i < 360; i++) {
+    const d = ranges[i];
+    if (!d) continue;
+    const m = d / 1000;
+    const a = i * Math.PI / 180;
+    const x = m * Math.cos(a);
+    const y = m * Math.sin(a);
+    if (x >= zoneRect.xMin && x <= zoneRect.xMax && y >= zoneRect.yMin && y <= zoneRect.yMax) {
+      countInZone++;
+    }
+  }
+
+  $("zTemp").innerHTML = globalSensors.t !== null ? globalSensors.t.toFixed(1) + "<small>&deg;C</small>" : "--";
+  $("zHum").innerHTML = globalSensors.h !== null ? globalSensors.h.toFixed(1) + "<small>%</small>" : "--";
+  $("zMq2").textContent = globalSensors.mq2 !== null ? globalSensors.mq2 : "--";
+  $("zMq135").textContent = globalSensors.mq135 !== null ? globalSensors.mq135 : "--";
+  
+  const zoneDesc = `Zone points: ${countInZone}`;
+  $("tTemp").textContent = zoneDesc;
+  $("tHum").textContent = zoneDesc;
+  $("tMq2").textContent = zoneDesc;
+  $("tMq135").textContent = zoneDesc;
+}
+
+async function pollScan() {
+  try {
+    const s = await (await fetch("/api/scan", { cache: "no-store" })).json();
+    ranges = s.ranges_mm;
+    draw();
+  } catch (e) { /* retry */ }
+  setTimeout(pollScan, 120);
+}
+
+async function pollStatus() {
+  try {
+    const s = await (await fetch("/api/status", { cache: "no-store" })).json();
+    $("dot").classList.toggle("on", s.connected);
+    $("conn").textContent = s.connected ? "Lidar connected" : "No data from lidar";
+    $("rpm").textContent = s.rpm ? "Speed " + Math.round(s.rpm) + " rpm" : "";
+    $("pts").textContent = s.valid_points + " / 360 points";
+    
+    if (s.sensors) {
+      globalSensors = s.sensors;
+      updateZoneStats();
+    }
+  } catch (e) {
+    $("dot").classList.remove("on");
+    $("conn").textContent = "Cannot reach server";
+  }
+  setTimeout(pollStatus, 1500);
+}
+
+sizeCanvas();
+draw();
+pollScan();
+pollStatus();
+</script>
+</body>
+</html>

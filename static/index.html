@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Robot Rescue Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+<!-- Fall Alert Banner with Preview & Download -->
+<div id="fall-alert-banner" class="hidden bg-red-950/90 border-b border-red-500 text-white px-4 py-3 shadow-2xl sticky top-0 z-50 animate-pulse">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-triangle-exclamation text-3xl text-yellow-400"></i>
+            <div>
+                <h3 class="font-bold text-sm tracking-wider text-red-400">CRITICAL ALERT: FALLEN PERSON DETECTED!</h3>
+                <p class="text-xs text-slate-300" id="fall-time">Detection Time: --</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-3 bg-slate-900 p-2 rounded-xl border border-red-500/40">
+            <img id="fall-preview-img" src="" alt="Capture" class="w-20 h-12 object-cover rounded-lg border border-slate-700">
+            <div class="flex flex-col gap-1">
+                <a id="fall-download-btn" href="" download="fall_capture.jpg" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-semibold text-center"><i class="fa-solid fa-download mr-1"></i> Download</a>
+                <button onclick="dismissAlert()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs">Dismiss</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <i class="fa-solid fa-robot text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-white">Rescue Unit Dashboard</h1>
+                <p class="text-xs text-slate-400">Disaster Robot Command & Control</p>
+            </div>
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <nav class="flex flex-wrap gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button onclick="switchTab('tab-main')" class="tab-btn px-3 py-1.5 rounded-lg font-medium bg-cyan-600 text-white" data-target="tab-main"><i class="fa-solid fa-house mr-1"></i> Main</button>
+            <button onclick="switchTab('tab-lidar')" class="tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white" data-target="tab-lidar"><i class="fa-solid fa-map mr-1"></i> SLAM Map & Pins</button>
+            <button onclick="switchTab('tab-charts')" class="tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white" data-target="tab-charts"><i class="fa-solid fa-chart-line mr-1"></i> Time-Series</button>
+            <button onclick="switchTab('tab-logs')" class="tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white" data-target="tab-logs"><i class="fa-solid fa-book-medical mr-1"></i> Incident Logs</button>
+            <button onclick="switchTab('tab-noir')" class="tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white" data-target="tab-noir"><i class="fa-solid fa-video mr-1"></i> NoIR</button>
+            <button onclick="switchTab('tab-webcams')" class="tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white" data-target="tab-webcams"><i class="fa-solid fa-camera-rotate mr-1"></i> Webcams</button>
+        </nav>
+
+        <!-- System & Network Header Indicators -->
+        <div class="flex items-center space-x-3 text-xs">
+            <div class="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
+                <i class="fa-solid fa-temperature-half text-orange-400"></i>
+                <span id="sys-cpu" class="font-mono text-slate-200">--C</span>
+            </div>
+            <div class="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
+                <i class="fa-solid fa-wifi text-cyan-400"></i>
+                <span id="sys-rssi" class="font-mono text-slate-200">-- dBm</span>
+            </div>
+            <div class="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
+                <span id="conn-dot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                <span id="conn-text" class="text-slate-300 font-medium">Connecting</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- TAB 1: MAIN -->
+    <div id="tab-main" class="tab-content space-y-6">
+        <!-- Robot Status Dashboard Panel -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <h2 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-robot text-cyan-400"></i> Robot Hardware & Network Status
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="text-xs text-slate-400 mb-1"><i class="fa-solid fa-battery-three-quarters text-emerald-400 mr-1"></i> Battery Level</div>
+                    <div id="status-battery" class="text-lg font-bold font-mono text-emerald-400">88%</div>
+                </div>
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="text-xs text-slate-400 mb-1"><i class="fa-solid fa-microchip text-orange-400 mr-1"></i> CPU Temperature</div>
+                    <div id="status-cpu" class="text-lg font-bold font-mono text-orange-400">-- C</div>
+                </div>
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="text-xs text-slate-400 mb-1"><i class="fa-solid fa-wifi text-cyan-400 mr-1"></i> Wi-Fi Signal (RSSI)</div>
+                    <div id="status-rssi" class="text-lg font-bold font-mono text-cyan-400">-- dBm</div>
+                </div>
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="text-xs text-slate-400 mb-1"><i class="fa-solid fa-plug text-purple-400 mr-1"></i> Arduino Link</div>
+                    <div id="status-arduino-badge" class="text-sm font-bold text-slate-300">Checking...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mini Camera Preview & Recent Activity Feed Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Front Camera Mini Preview -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-video text-cyan-400"></i> Front Camera Live Stream
+                    </h3>
+                    <button onclick="switchTab('tab-webcams')" class="text-xs text-cyan-400 hover:underline">Expand</button>
+                </div>
+                <div class="relative w-full flex-1 aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                    <img id="main-cam-front" alt="Front Camera Mini" class="w-full h-full object-contain">
+                </div>
+            </div>
+
+            <!-- Recent Activity Feed -->
+            <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-orange-400"></i> Recent Emergency Activity & Alerts
+                    </h3>
+                    <button onclick="switchTab('tab-logs')" class="text-xs text-orange-400 hover:underline">View All Logs</button>
+                </div>
+                <div class="overflow-x-auto flex-1">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                            <tr>
+                                <th class="p-2.5">Time</th>
+                                <th class="p-2.5">Event</th>
+                                <th class="p-2.5">Snapshot</th>
+                                <th class="p-2.5">Readings</th>
+                            </tr>
+                        </thead>
+                        <tbody id="main-logs-tbody" class="divide-y divide-slate-800">
+                            <tr><td colspan="4" class="p-4 text-center text-slate-500">No recent incidents recorded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sensor Bar Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Temperature Bar Card -->
+            <div id="card-temp" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl transition-all space-y-3">
+                <div class="flex justify-between items-start">
+                    <span class="text-xs text-slate-400 font-medium">Temperature</span>
+                    <span id="badge-temp" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">--</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                    <div id="m-temp" class="text-2xl font-bold font-mono text-slate-200">--</div>
+                    <span class="text-xs text-slate-400">Range: 0~50°C</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+                    <div id="bar-temp" class="bg-cyan-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+                <div class="text-[10px] text-slate-400">낮음(&lt;18) | 적절(18~30) | 높음(&gt;30)</div>
+            </div>
+
+            <!-- Humidity Bar Card -->
+            <div id="card-hum" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl transition-all space-y-3">
+                <div class="flex justify-between items-start">
+                    <span class="text-xs text-slate-400 font-medium">Humidity</span>
+                    <span id="badge-hum" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">--</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                    <div id="m-hum" class="text-2xl font-bold font-mono text-slate-200">--</div>
+                    <span class="text-xs text-slate-400">Range: 0~100%</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+                    <div id="bar-hum" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+                <div class="text-[10px] text-slate-400">낮음(&lt;30) | 적절(30~70) | 높음(&gt;70)</div>
+            </div>
+
+            <!-- MQ-2 Gas Bar Card -->
+            <div id="card-mq2" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl transition-all space-y-3">
+                <div class="flex justify-between items-start">
+                    <span class="text-xs text-slate-400 font-medium">MQ-2 Gas Sensor</span>
+                    <span id="badge-mq2" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">--</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                    <div id="m-mq2" class="text-2xl font-bold font-mono text-slate-200">--</div>
+                    <span class="text-xs text-slate-400">Max: 1000</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+                    <div id="bar-mq2" class="bg-orange-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+                <div class="text-[10px] text-slate-400">안전(&le;300) | 주의(301~600) | 위험(&gt;600)</div>
+            </div>
+
+            <!-- MQ-135 Air Bar Card -->
+            <div id="card-mq135" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl transition-all space-y-3">
+                <div class="flex justify-between items-start">
+                    <span class="text-xs text-slate-400 font-medium">MQ-135 Air Quality</span>
+                    <span id="badge-mq135" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">--</span>
+                </div>
+                <div class="flex justify-between items-baseline">
+                    <div id="m-mq135" class="text-2xl font-bold font-mono text-slate-200">--</div>
+                    <span class="text-xs text-slate-400">Max: 1000</span>
+                </div>
+                <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+                    <div id="bar-mq135" class="bg-purple-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+                <div class="text-[10px] text-slate-400">안전(&le;300) | 주의(301~600) | 위험(&gt;600)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: SLAM MAP & PINS -->
+    <div id="tab-lidar" class="tab-content space-y-6 hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-bold text-white"><i class="fa-solid fa-map text-cyan-400 mr-2"></i> SLAM Map & Hazard Pinning (Click Map to Drop Pin)</h2>
+                    <div class="flex gap-2">
+                        <button onclick="clearMarkers()" class="bg-amber-600/20 text-amber-400 border border-amber-500/40 px-2 py-1 rounded text-xs">Clear Pins</button>
+                        <button onclick="clearMap()" class="bg-red-600/20 text-red-400 border border-red-500/40 px-2 py-1 rounded text-xs">Clear Map</button>
+                    </div>
+                </div>
+                <div id="map-container" class="relative w-full aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center cursor-crosshair" onclick="handleMapClick(event)">
+                    <img id="slam-map-img" alt="SLAM Map Loading..." class="w-full h-full object-contain pointer-events-none">
+                    <div id="pins-overlay" class="absolute inset-0 pointer-events-none"></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-4">
+                <div>
+                    <h2 class="text-sm font-bold text-white mb-4"><i class="fa-solid fa-thumbtack text-red-400 mr-2"></i> Pin Legend & Active Pins</h2>
+                    <div class="space-y-2 text-xs text-slate-300 mb-4">
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Victim Location</div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span> Gas Leak Zone</div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span> Danger / No Entry</div>
+                    </div>
+                    <div id="pins-list" class="space-y-2 max-h-48 overflow-y-auto text-xs font-mono">
+                        <div class="text-slate-500">No pins placed yet.</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <h3 class="text-xs font-bold text-cyan-400 mb-2"><i class="fa-solid fa-calculator mr-1"></i> Region Averages</h3>
+                    <div id="region-stats" class="text-xs text-slate-300 space-y-1">
+                        <div>Click chart points to inspect data.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: TIME-SERIES CHARTS -->
+    <div id="tab-charts" class="tab-content space-y-6 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex justify-between items-center">
+            <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs">
+                <button id="u-second" onclick="setUnit('second')" class="px-4 py-1.5 rounded-lg font-medium">Seconds</button>
+                <button id="u-minute" onclick="setUnit('minute')" class="px-4 py-1.5 rounded-lg font-medium">Minutes</button>
+                <button id="u-hour" onclick="setUnit('hour')" class="px-4 py-1.5 rounded-lg font-medium">Hours</button>
+            </div>
+            <button onclick="exportCSV()" class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-download"></i> Download CSV
+            </button>
+        </div>
+        <div id="charts" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+    </div>
+
+    <!-- TAB 4: INCIDENT LOGS -->
+    <div id="tab-logs" class="tab-content space-y-6 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-bold text-white"><i class="fa-solid fa-book-medical text-red-400 mr-2"></i> Incident Event Logbook</h2>
+                <button onclick="fetchLogs()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs">Refresh Logs</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead class="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                        <tr>
+                            <th class="p-3">Time</th>
+                            <th class="p-3">Event Type</th>
+                            <th class="p-3">Snapshot</th>
+                            <th class="p-3">Sensor Values at Event</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-table-body" class="divide-y divide-slate-800">
+                        <tr><td colspan="4" class="p-4 text-center text-slate-500">No incident logs recorded yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 5: NOIR CAMERA -->
+    <div id="tab-noir" class="tab-content space-y-6 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl max-w-3xl mx-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-bold text-white">NoIR Camera Stream</h2>
+            </div>
+            <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-slate-800">
+                <img id="cam-noir" alt="" class="w-full h-full object-contain">
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 6: WEBCAMS -->
+    <div id="tab-webcams" class="tab-content space-y-6 hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[75vh]">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col shadow-xl">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-sm font-bold text-white"><i class="fa-solid fa-video text-cyan-400 mr-2"></i> Back Webcam</h2>
+                </div>
+                <div class="relative w-full flex-1 bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center cursor-pointer" onclick="toggleFullscreen(this)">
+                    <img id="cam-back" alt="Back Camera" class="w-full h-full object-contain">
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col shadow-xl">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-sm font-bold text-white"><i class="fa-solid fa-video text-cyan-400 mr-2"></i> Front Webcam / Fall Detection</h2>
+                </div>
+                <div class="relative w-full flex-1 bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center cursor-pointer" onclick="toggleFullscreen(this)">
+                    <img id="cam-front" alt="Front Camera" class="w-full h-full object-contain">
+                </div>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+    const POLL_MS = 2000;
+    const POINTS = 30;
+    const EXPORT_POINTS = { second: 1800, minute: 1440, hour: 48 };
+
+    const SENSORS = [
+        { key: 'mq2', title: 'Gas Sensor MQ-2', sub: 'Combustible gas and smoke', unit: 'raw', color: '#f97316', dot: 'bg-orange-500', text: 'text-orange-400' },
+        { key: 'mq135', title: 'Air Quality Sensor MQ-135', sub: 'Air pollution level', unit: 'raw', color: '#a855f7', dot: 'bg-purple-500', text: 'text-purple-400' },
+        { key: 'temp', title: 'Temperature Sensor DHT11', sub: 'Indoor ambient temperature', unit: 'C', color: '#06b6d4', dot: 'bg-cyan-500', text: 'text-cyan-400' },
+        { key: 'hum', title: 'Humidity Sensor DHT11', sub: 'Indoor relative humidity', unit: 'RH', color: '#3b82f6', dot: 'bg-blue-500', text: 'text-blue-400' }
+    ];
+
+    let unit = 'second';
+    let globalHistoryData = [];
+    const charts = {};
+    const $ = id => document.getElementById(id);
+
+    function switchTab(targetId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.className = 'tab-btn px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white';
+        });
+        $(targetId).classList.remove('hidden');
+        const activeBtn = document.querySelector(`[data-target="${targetId}"]`);
+        if (activeBtn) activeBtn.className = 'tab-btn px-3 py-1.5 rounded-lg font-medium bg-cyan-600 text-white';
+        if (targetId === 'tab-logs') fetchLogs();
+    }
+
+    function toggleFullscreen(element) {
+        if (!document.fullscreenElement) {
+            if (element.requestFullscreen) element.requestFullscreen();
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+        }
+    }
+
+    async function clearMap() {
+        await fetch('/api/clear_map', { method: 'POST' });
+    }
+
+    async function clearMarkers() {
+        await fetch('/api/markers', { method: 'DELETE' });
+        loadMarkers();
+    }
+
+    async function dismissAlert() {
+        await fetch('/api/clear_fall', { method: 'POST' });
+        $('fall-alert-banner').classList.add('hidden');
+    }
+
+    async function handleMapClick(event) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * 100;
+        const y = ((event.clientY - rect.top) / rect.height) * 100;
+        
+        const pinType = prompt("Select Pin Type:\n1. Victim Location\n2. Gas Leak Zone\n3. Danger / No Entry", "1");
+        let typeName = "Victim", color = "bg-red-500";
+        if (pinType === "2") { typeName = "Gas Leak"; color = "bg-orange-500"; }
+        else if (pinType === "3") { typeName = "Danger"; color = "bg-yellow-500"; }
+        else if (pinType !== "1") return;
+
+        await fetch('/api/markers', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({x, y, type: typeName, color, time: new Date().toLocaleTimeString()})
+        });
+        loadMarkers();
+    }
+
+    async function loadMarkers() {
+        try {
+            const r = await fetch('/api/markers');
+            const markers = await r.json();
+            const overlay = $('pins-overlay');
+            const list = $('pins-list');
+            if (!overlay || !list) return;
+
+            overlay.innerHTML = markers.map((m, i) => `
+                <div class="absolute w-4 h-4 rounded-full ${m.color} border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 flex items-center justify-center text-[9px] font-bold text-black" style="left: ${m.x}%; top: ${m.y}%;">
+                    ${i+1}
+                </div>`).join('');
+
+            if (markers.length === 0) {
+                list.innerHTML = '<div class="text-slate-500">No pins placed yet.</div>';
+            } else {
+                list.innerHTML = markers.map((m, i) => `
+                    <div class="bg-slate-950 p-2 rounded border border-slate-800 flex justify-between items-center">
+                        <span>#${i+1} <strong class="text-white">${m.type}</strong></span>
+                        <span class="text-slate-500 text-[10px]">${m.time}</span>
+                    </div>`).join('');
+            }
+        } catch (e) {}
+    }
+
+    async function fetchLogs() {
+        try {
+            const r = await fetch('/api/logs');
+            const logs = await r.json();
+            const tbody = $('logs-table-body');
+            if (!tbody) return;
+
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">No incident logs recorded yet.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = logs.map(l => `
+                <tr class="hover:bg-slate-900/50">
+                    <td class="p-3 font-mono text-cyan-400">${l.time}</td>
+                    <td class="p-3 font-semibold text-red-400">${l.type}</td>
+                    <td class="p-3">
+                        ${l.image ? `<a href="${l.image}" target="_blank"><img src="${l.image}" class="w-16 h-10 object-cover rounded border border-slate-700"></a>` : '<span class="text-slate-500">N/A</span>'}
+                    </td>
+                    <td class="p-3 font-mono text-slate-300">
+                        Temp: ${l.values.temp ?? '--'}C | Hum: ${l.values.hum ?? '--'}% | MQ2: ${l.values.mq2 ?? '--'} | MQ135: ${l.values.mq135 ?? '--'}
+                    </td>
+                </tr>`).join('');
+        } catch (e) {}
+    }
+
+    function updateSensorCard(key, val) {
+        const card = $('card-' + key);
+        const valEl = $('m-' + key);
+        const badgeEl = $('badge-' + key);
+        const barEl = $('bar-' + key);
+        if (!card || !valEl || !badgeEl || !barEl) return;
+
+        if (val == null) {
+            card.className = "bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+            valEl.textContent = "--";
+            badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400";
+            badgeEl.textContent = "NO DATA";
+            barEl.style.width = "0%";
+            barEl.className = "bg-slate-600 h-full rounded-full transition-all duration-300";
+            return;
+        }
+
+        let unitStr = '';
+        if (key === 'temp') unitStr = ' C';
+        else if (key === 'hum') unitStr = ' %';
+
+        valEl.textContent = val + unitStr;
+
+        // Calculate percentage for progress bar
+        let maxVal = (key === 'temp') ? 50 : (key === 'hum') ? 100 : 1000;
+        let pct = Math.min(100, Math.max(0, (val / maxVal) * 100));
+        barEl.style.width = pct + '%';
+
+        // Gas & Air sensors (MQ-2, MQ-135): 안전, 주의, 위험
+        if (key === 'mq2' || key === 'mq135') {
+            if (val <= 300) {
+                card.className = "bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-emerald-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                badgeEl.textContent = "안전 (Safe)";
+                barEl.className = "bg-emerald-500 h-full rounded-full transition-all duration-300";
+            } else if (val <= 600) {
+                card.className = "bg-amber-950/20 border border-amber-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-amber-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                badgeEl.textContent = "주의 (Warning)";
+                barEl.className = "bg-amber-500 h-full rounded-full transition-all duration-300";
+            } else {
+                card.className = "bg-red-950/20 border border-red-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-red-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/30";
+                badgeEl.textContent = "위험 (Danger)";
+                barEl.className = "bg-red-500 h-full rounded-full transition-all duration-300";
+            }
+        } 
+        // Temperature & Humidity sensors: 낮음, 적절, 높음
+        else {
+            let lowLimit = (key === 'temp') ? 18 : 30;
+            let highLimit = (key === 'temp') ? 30 : 70;
+
+            if (val < lowLimit) {
+                card.className = "bg-blue-950/20 border border-blue-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-blue-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30";
+                badgeEl.textContent = "낮음 (Low)";
+                barEl.className = "bg-blue-500 h-full rounded-full transition-all duration-300";
+            } else if (val > highLimit) {
+                card.className = "bg-red-950/20 border border-red-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-red-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/30";
+                badgeEl.textContent = "높음 (High)";
+                barEl.className = "bg-red-500 h-full rounded-full transition-all duration-300";
+            } else {
+                card.className = "bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-5 shadow-xl transition-all space-y-3";
+                valEl.className = "text-2xl font-bold font-mono text-emerald-400";
+                badgeEl.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                badgeEl.textContent = "적절 (Optimal)";
+                barEl.className = "bg-emerald-500 h-full rounded-full transition-all duration-300";
+            }
+        }
+    }
+
+    function buildCharts() {
+        const container = $('charts');
+        if (!container) return;
+        container.innerHTML = SENSORS.map(s => `
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2"><span class="w-3 h-3 rounded-full ${s.dot}"></span>${s.title}</h3>
+                        <p class="text-xs text-slate-400">${s.sub}</p>
+                    </div>
+                    <div class="text-right">
+                        <span id="val-${s.key}" class="text-lg font-bold font-mono ${s.text}">--</span>
+                        <span class="text-xs text-slate-400">${s.unit}</span>
+                    </div>
+                </div>
+                <div class="w-full h-64 bg-slate-950 rounded-xl p-3 border border-slate-800"><canvas id="chart-${s.key}"></canvas></div>
+            </div>`).join('');
+        const axis = { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#94a3b8', font: { size: 10 } } };
+        SENSORS.forEach(s => {
+            charts[s.key] = new Chart($('chart-' + s.key), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: s.color, backgroundColor: s.color + '1a', borderWidth: 2, fill: true, tension: 0.3, pointRadius: 2 }] },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, animation: false, 
+                    scales: { x: axis, y: axis }, plugins: { legend: { display: false } },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0 && globalHistoryData.length > 0) {
+                            const idx = elements[0].index;
+                            const start = Math.max(0, idx - 2);
+                            const end = Math.min(globalHistoryData.length - 1, idx + 2);
+                            computeRegionAverage(start, end);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    function computeRegionAverage(startIndex, endIndex) {
+        const slice = globalHistoryData.slice(startIndex, endIndex + 1);
+        if (slice.length === 0) return;
+        let sums = { mq2: 0, mq135: 0, temp: 0, hum: 0 };
+        let counts = { mq2: 0, mq135: 0, temp: 0, hum: 0 };
+
+        slice.forEach(row => {
+            ['mq2', 'mq135', 'temp', 'hum'].forEach(k => {
+                if (row[k] != null) { sums[k] += row[k]; counts[k]++; }
+            });
+        });
+
+        const avgs = {};
+        Object.keys(sums).forEach(k => {
+            avgs[k] = counts[k] > 0 ? (sums[k] / counts[k]).toFixed(1) : '--';
+        });
+
+        const statsEl = $('region-stats');
+        if (statsEl) {
+            statsEl.innerHTML = `
+                <div>Time: <span class="text-white">${slice[0].t} ~ ${slice[slice.length-1].t}</span></div>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <div>Temp: <span class="text-cyan-400 font-mono">${avgs.temp} C</span></div>
+                    <div>Humidity: <span class="text-blue-400 font-mono">${avgs.hum} %</span></div>
+                    <div>MQ-2: <span class="text-orange-400 font-mono">${avgs.mq2}</span></div>
+                    <div>MQ-135: <span class="text-purple-400 font-mono">${avgs.mq135}</span></div>
+                </div>`;
+        }
+    }
+
+    function setConn(color, text) {
+        if ($('conn-dot'))$('conn-dot').className = 'w-2.5 h-2.5 rounded-full ' + color;
+        if ($('conn-text'))$('conn-text').textContent = text;
+        if ($('status-arduino-badge')) {$('status-arduino-badge').textContent = text;
+            $('status-arduino-badge').className = text.includes('connected') ? 'text-sm font-bold text-emerald-400' : 'text-sm font-bold text-red-400';
+        }
+    }
+
+    function render(d) {
+        const arduinoOk = d.status.arduino;
+        if (arduinoOk) setConn('bg-emerald-500 animate-pulse', 'Arduino connected');
+        else setConn('bg-red-500', 'Disconnected');
+
+        if (d.health) {
+            if ($('sys-cpu'))$('sys-cpu').textContent = d.health.cpu_temp + 'C';
+            if ($('sys-rssi'))$('sys-rssi').textContent = d.health.wifi_rssi + ' dBm';
+            if ($('status-cpu'))$('status-cpu').textContent = d.health.cpu_temp + ' C';
+            if ($('status-rssi'))$('status-rssi').textContent = d.health.wifi_rssi + ' dBm';
+            if ($('status-battery'))$('status-battery').textContent = d.health.battery + '%';
+        }
+
+        if (d.fall && d.fall.detected) {
+            $('fall-alert-banner').classList.remove('hidden');$('fall-time').textContent = 'Detection Time: ' + d.fall.time;
+            if (d.fall.image && $('fall-preview-img').src !== window.location.origin + d.fall.image) {$('fall-preview-img').src = d.fall.image;
+                $('fall-download-btn').href = d.fall.image;
+            }
+        }
+
+        const mainLogsTbody = $('main-logs-tbody');
+        if (mainLogsTbody && d.logs) {
+            if (d.logs.length === 0) {
+                mainLogsTbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">No recent incidents recorded.</td></tr>';
+            } else {
+                mainLogsTbody.innerHTML = d.logs.map(l => `
+                    <tr class="hover:bg-slate-900/50">
+                        <td class="p-2.5 font-mono text-cyan-400">${l.time}</td>
+                        <td class="p-2.5 font-semibold text-red-400">${l.type}</td>
+                        <td class="p-2.5">
+                            ${l.image ? `<a href="${l.image}" target="_blank"><img src="${l.image}" class="w-12 h-8 object-cover rounded border border-slate-700"></a>` : '<span class="text-slate-500">N/A</span>'}
+                        </td>
+                        <td class="p-2.5 font-mono text-slate-300">Temp: ${l.values.temp ?? '--'}C | MQ2: ${l.values.mq2 ?? '--'}</td>
+                    </tr>`).join('');
+            }
+        }
+
+        const cur = arduinoOk ? d.latest : null;
+        if (cur) {
+            updateSensorCard('temp', cur.temp);
+            updateSensorCard('hum', cur.hum);
+            updateSensorCard('mq2', cur.mq2);
+            updateSensorCard('mq135', cur.mq135);
+
+            SENSORS.forEach(s => {
+                const valEl = $('val-' + s.key);
+                if (valEl) valEl.textContent = cur[s.key] != null ? cur[s.key] : '--';
+            });
+        }
+
+        globalHistoryData = d.history;
+        const labels = d.history.map(h => h.t);
+        SENSORS.forEach(s => {
+            if (charts[s.key]) {
+                const c = charts[s.key];
+                c.data.labels = labels;
+                c.data.datasets[0].data = d.history.map(h => h[s.key]);
+                c.update();
+            }
+        });
+    }
+
+    function pollSlamMap() {
+        const img = $('slam-map-img');
+        if (img) img.src = '/api/slam_image?t=' + Date.now();
+        setTimeout(pollSlamMap, 200);
+    }
+
+    async function pollData() {
+        try {
+            const r = await fetch(`/api/data?unit=${unit}&n=${POINTS}`);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            render(await r.json());
+        } catch (e) {
+            setConn('bg-red-500', 'Server unreachable');
+        }
+        setTimeout(pollData, POLL_MS);
+    }
+
+    function setUnit(u) {
+        unit = u;
+        ['second', 'minute', 'hour'].forEach(x => {
+            const btn = $('u-' + x);
+            if (btn) {
+                btn.className = 'px-4 py-1.5 rounded-lg font-medium transition ' +
+                    (x === u ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white');
+            }
+        });
+        pollData();
+    }
+
+    function exportCSV() {
+        window.location = `/api/export.csv?unit=${unit}&n=${EXPORT_POINTS[unit]}`;
+    }
+
+    if ($('cam-noir'))$('cam-noir').src = '/video_feed/noir?t=' + Date.now();
+    if ($('cam-front'))$('cam-front').src = '/video_feed/front?t=' + Date.now();
+    if ($('main-cam-front'))$('main-cam-front').src = '/video_feed/front?t=' + Date.now();
+    if ($('cam-back'))$('cam-back').src = '/video_feed/back?t=' + Date.now();
+
+    buildCharts();
+    setUnit('second');
+    pollSlamMap();
+    pollData();
+    loadMarkers();
+</script>
+</body>
+</html>
